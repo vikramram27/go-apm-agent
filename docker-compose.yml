@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: notes-postgres
+    restart: unless-stopped
+    # Database kept internal to Docker network, no host port binding needed
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: notes-redis
+    restart: unless-stopped
+    # Redis kept internal to Docker network, no host port binding needed
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  notes-api:
+    build:
+      context: ./notes-api
+      dockerfile: Dockerfile
+    container_name: notes-api
+    restart: unless-stopped
+    ports:
+      - "9933:8080"
+    environment:
+      PORT: "8080"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: notes_api
+      DB_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: 0
+      JWT_SECRET: super-secret-jwt-key-notes-api-native-32b!
+      JWT_EXPIRATION_HOURS: 24
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notes-api-gin:
+    build:
+      context: ./notes-api-gin
+      dockerfile: Dockerfile
+    container_name: notes-api-gin
+    restart: unless-stopped
+    ports:
+      - "9944:8081"
+    environment:
+      PORT: "8081"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: notes_api_gin
+      DB_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: 1
+      JWT_SECRET: super-secret-jwt-key-notes-api-gin-32b!
+      JWT_EXPIRATION_HOURS: 24
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
