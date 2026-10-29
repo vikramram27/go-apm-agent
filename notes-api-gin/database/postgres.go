@@ -6,7 +6,8 @@ import (
 	"log"
 	"time"
 
-	_ "github.com/lib/pq"
+	"go.elastic.co/apm/module/apmsql/v2"
+	_ "go.elastic.co/apm/module/apmsql/v2/pq" // APM-instrumented lib/pq driver
 	"notes-api-gin/config"
 )
 
@@ -17,7 +18,7 @@ func ConnectPostgres(cfg *config.Config) (*sql.DB, error) {
 
 	maxAttempts := 10
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		db, err = sql.Open("postgres", dsn)
+		db, err = apmsql.Open("postgres", dsn)
 		if err == nil {
 			err = db.Ping()
 			if err == nil {

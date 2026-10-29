@@ -57,6 +57,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-notes-api-native-32b!}
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
       JWT_REFRESH_EXPIRATION_HOURS: ${JWT_REFRESH_EXPIRATION_HOURS:-168}
+      # Elastic APM agent
+      ELASTIC_APM_SERVICE_NAME: notes-api
+      ELASTIC_APM_SERVER_URL: ${ELASTIC_APM_SERVER_URL:-http://apm-server:8200}
+      ELASTIC_APM_SECRET_TOKEN: ${ELASTIC_APM_SECRET_TOKEN:-}
+      ELASTIC_APM_ENVIRONMENT: ${APP_ENV:-staging}
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,6 +95,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-notes-api-gin-32b!}
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
       JWT_REFRESH_EXPIRATION_HOURS: ${JWT_REFRESH_EXPIRATION_HOURS:-168}
+      # Elastic APM agent
+      ELASTIC_APM_SERVICE_NAME: notes-api-gin
+      ELASTIC_APM_SERVER_URL: ${ELASTIC_APM_SERVER_URL:-http://apm-server:8200}
+      ELASTIC_APM_SECRET_TOKEN: ${ELASTIC_APM_SECRET_TOKEN:-}
+      ELASTIC_APM_ENVIRONMENT: ${APP_ENV:-staging}
     depends_on:
       postgres:
         condition: service_healthy
