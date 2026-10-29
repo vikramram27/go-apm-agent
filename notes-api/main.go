@@ -76,6 +76,7 @@ func main() {
 	// Public Auth routes
 	mux.HandleFunc("POST /api/v1/auth/register", authHandler.Register)
 	mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)
+	mux.HandleFunc("POST /api/v1/auth/refresh", authHandler.RefreshToken)
 
 	// Protected routes wrapper
 	withAuth := middleware.Auth(authService)

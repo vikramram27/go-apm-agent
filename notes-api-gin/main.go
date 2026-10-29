@@ -84,6 +84,7 @@ func main() {
 		{
 			authGroup.POST("/register", authHandler.Register)
 			authGroup.POST("/login", authHandler.Login)
+			authGroup.POST("/refresh", authHandler.RefreshToken)
 
 			// Protected auth routes
 			authProtected := authGroup.Group("")
