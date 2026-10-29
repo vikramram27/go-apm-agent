@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.elastic.co/apm/module/apmgin/v2"
+	"go.elastic.co/apm/v2"
 	"notes-api-gin/cache"
 	"notes-api-gin/config"
 	"notes-api-gin/database"
@@ -53,6 +55,7 @@ func main() {
 	// Setup Gin Engine
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
+	router.Use(apmgin.Middleware(router)) // APM first: traces every request by route
 	router.Use(gin.Recovery())
 	router.Use(gin.Logger())
 	router.Use(middleware.CORS())
@@ -142,6 +145,9 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
+
+	// Send any buffered APM events before exiting
+	apm.DefaultTracer().Flush(nil)
 
 	log.Println("notes-api-gin exited cleanly")
 }

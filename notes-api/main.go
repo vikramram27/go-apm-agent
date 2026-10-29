@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.elastic.co/apm/module/apmhttp/v2"
+	"go.elastic.co/apm/v2"
 	"notes-api/cache"
 	"notes-api/config"
 	"notes-api/database"
@@ -97,8 +99,17 @@ func main() {
 	mux.Handle("DELETE /api/v1/notes/{id}/share/{userId}", withAuth(http.HandlerFunc(noteHandler.UnshareNote)))
 	mux.Handle("GET /api/v1/notes/{id}/access", withAuth(http.HandlerFunc(noteHandler.CheckAccess)))
 
-	// Global Middlewares: Logger and CORS
-	handler := middleware.Logger(middleware.CORS(mux))
+	// Name APM transactions by route pattern (e.g. "GET /api/v1/notes/{id}")
+	// instead of the raw path, so requests group per endpoint.
+	routed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r)
+		if tx := apm.TransactionFromContext(r.Context()); tx != nil && r.Pattern != "" {
+			tx.Name = r.Pattern
+		}
+	})
+
+	// Global Middlewares: APM (outermost), Logger and CORS
+	handler := apmhttp.Wrap(middleware.Logger(middleware.CORS(routed)))
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
@@ -129,6 +140,9 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
+
+	// Send any buffered APM events before exiting
+	apm.DefaultTracer().Flush(nil)
 
 	log.Println("notes-api exited cleanly")
 }
