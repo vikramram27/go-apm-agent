@@ -37,6 +37,7 @@ func ConnectRedis(cfg *config.Config) (*RedisAuthCache, error) {
 		Password: cfg.RedisPassword,
 		DB:       cfg.RedisDB,
 	})
+	rdb.AddHook(apmHook{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
