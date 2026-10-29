@@ -137,6 +137,7 @@ BODY=$(echo "$RESP" | head -n -1)
 STATUS=$(echo "$RESP" | tail -n 1)
 assert_status "4.3 Login Alice (200 OK)" 200 "$STATUS"
 ALICE_TOKEN=$(echo "$BODY" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+ALICE_REFRESH_TOKEN=$(echo "$BODY" | grep -o '"refresh_token":"[^"]*' | cut -d'"' -f4)
 
 # 200 OK: Bob Login
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/auth/login" \
@@ -318,18 +319,48 @@ RESP=$(curl -s -w "\n%{http_code}" -X GET "$BASE_URL/notes/$NOTE_ID" \
 STATUS=$(echo "$RESP" | tail -n 1)
 assert_status "10.6 Read deleted note (404 Not Found)" 404 "$STATUS"
 
-echo -e "\n${BLUE}--- Section 11: Redis Auth Cache & Token Revocation ---${NC}"
+echo -e "\n${BLUE}--- Section 11: Redis Auth Cache, Refresh Token & Token Revocation ---${NC}"
+# 401 Unauthorized: Refresh with fake token
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/auth/refresh" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"fake-invalid-refresh-token"}')
+STATUS=$(echo "$RESP" | tail -n 1)
+assert_status "11.1 Refresh with invalid token (401 Unauthorized)" 401 "$STATUS"
+
+# 200 OK: Refresh with valid refresh token stored in Redis
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/auth/refresh" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"'"$ALICE_REFRESH_TOKEN"'"}')
+BODY=$(echo "$RESP" | head -n -1)
+STATUS=$(echo "$RESP" | tail -n 1)
+assert_status "11.2 Refresh token via Redis session (200 OK)" 200 "$STATUS"
+NEW_ALICE_TOKEN=$(echo "$BODY" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+NEW_ALICE_REFRESH_TOKEN=$(echo "$BODY" | grep -o '"refresh_token":"[^"]*' | cut -d'"' -f4)
+
+# 200 OK: Verify newly issued access token works
+RESP=$(curl -s -w "\n%{http_code}" -X GET "$BASE_URL/auth/me" \
+  -H "Authorization: Bearer $NEW_ALICE_TOKEN")
+STATUS=$(echo "$RESP" | tail -n 1)
+assert_status "11.3 Access API with refreshed access token (200 OK)" 200 "$STATUS"
+
+# 401 Unauthorized: Old refresh token is rotated and no longer valid
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/auth/refresh" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"'"$ALICE_REFRESH_TOKEN"'"}')
+STATUS=$(echo "$RESP" | tail -n 1)
+assert_status "11.4 Reusing old rotated refresh token fails (401 Unauthorized)" 401 "$STATUS"
+
 # 200 OK: Alice logs out
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/auth/logout" \
-  -H "Authorization: Bearer $ALICE_TOKEN")
+  -H "Authorization: Bearer $NEW_ALICE_TOKEN")
 STATUS=$(echo "$RESP" | tail -n 1)
-assert_status "11.1 Alice logs out (200 OK)" 200 "$STATUS"
+assert_status "11.5 Alice logs out (200 OK)" 200 "$STATUS"
 
 # 401 Unauthorized: Blacklisted token rejected
 RESP=$(curl -s -w "\n%{http_code}" -X GET "$BASE_URL/auth/me" \
-  -H "Authorization: Bearer $ALICE_TOKEN")
+  -H "Authorization: Bearer $NEW_ALICE_TOKEN")
 STATUS=$(echo "$RESP" | tail -n 1)
-assert_status "11.2 Call API with blacklisted token (401 Unauthorized)" 401 "$STATUS"
+assert_status "11.6 Call API with blacklisted token (401 Unauthorized)" 401 "$STATUS"
 
 echo -e "\n${BLUE}========================================================================${NC}"
 echo -e "${GREEN} Verification completed successfully: ${pass_count} passed, ${fail_count} failed.${NC}"
