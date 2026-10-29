@@ -18,6 +18,12 @@ type AuthCache interface {
 	DeleteUserSession(ctx context.Context, jti string) error
 	BlacklistToken(ctx context.Context, jti string, ttl time.Duration) error
 	IsTokenBlacklisted(ctx context.Context, jti string) (bool, error)
+
+	// Refresh token storage in Redis
+	SetRefreshToken(ctx context.Context, refreshToken string, user *models.UserResponse, ttl time.Duration) error
+	GetRefreshToken(ctx context.Context, refreshToken string) (*models.UserResponse, error)
+	DeleteRefreshToken(ctx context.Context, refreshToken string) error
+
 	Ping(ctx context.Context) error
 }
 
@@ -67,7 +73,7 @@ func (r *RedisAuthCache) GetUserSession(ctx context.Context, jti string) (*model
 	key := fmt.Sprintf("auth:session:%s", jti)
 	data, err := r.client.Get(ctx, key).Bytes()
 	if err == redis.Nil {
-		return nil, nil
+		return nil, nil // Not found or expired
 	}
 	if err != nil {
 		return nil, err
@@ -102,7 +108,37 @@ func (r *RedisAuthCache) IsTokenBlacklisted(ctx context.Context, jti string) (bo
 	return val == "revoked", nil
 }
 
+func (r *RedisAuthCache) SetRefreshToken(ctx context.Context, refreshToken string, user *models.UserResponse, ttl time.Duration) error {
+	data, err := json.Marshal(user)
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("auth:refresh:%s", refreshToken)
+	return r.client.Set(ctx, key, data, ttl).Err()
+}
+
+func (r *RedisAuthCache) GetRefreshToken(ctx context.Context, refreshToken string) (*models.UserResponse, error) {
+	key := fmt.Sprintf("auth:refresh:%s", refreshToken)
+	data, err := r.client.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, nil // Not found or expired
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var user models.UserResponse
+	if err := json.Unmarshal(data, &user); err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *RedisAuthCache) DeleteRefreshToken(ctx context.Context, refreshToken string) error {
+	key := fmt.Sprintf("auth:refresh:%s", refreshToken)
+	return r.client.Del(ctx, key).Err()
+}
+
 func (r *RedisAuthCache) Ping(ctx context.Context) error {
 	return r.client.Ping(ctx).Err()
 }
-
