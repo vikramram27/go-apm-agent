@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     container_name: notes-postgres
     restart: unless-stopped
-    # Database kept internal to Docker network, no host port binding needed
+    # Database kept internal to Docker network, no host port collision
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -21,7 +21,7 @@ services:
     image: redis:7-alpine
     container_name: notes-redis
     restart: unless-stopped
-    # Redis kept internal to Docker network, no host port binding needed
+    # Redis kept internal to Docker network, no host port collision
     volumes:
       - redis_data:/data
     healthcheck:
@@ -37,7 +37,12 @@ services:
     container_name: notes-api
     restart: unless-stopped
     ports:
-      - "9933:8080"
+      - "${NOTES_API_PORT:-9933}:8080"
+    env_file:
+      - .env
+    volumes:
+      # Mount root .env into container
+      - ./.env:/app/.env:ro
     environment:
       PORT: "8080"
       DB_HOST: postgres
@@ -49,8 +54,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: 0
-      JWT_SECRET: super-secret-jwt-key-notes-api-native-32b!
-      JWT_EXPIRATION_HOURS: 24
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-notes-api-native-32b!}
+      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+      JWT_REFRESH_EXPIRATION_HOURS: ${JWT_REFRESH_EXPIRATION_HOURS:-168}
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,7 +70,12 @@ services:
     container_name: notes-api-gin
     restart: unless-stopped
     ports:
-      - "9944:8081"
+      - "${NOTES_API_GIN_PORT:-9944}:8081"
+    env_file:
+      - .env
+    volumes:
+      # Mount root .env into container
+      - ./.env:/app/.env:ro
     environment:
       PORT: "8081"
       DB_HOST: postgres
@@ -76,8 +87,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: 1
-      JWT_SECRET: super-secret-jwt-key-notes-api-gin-32b!
-      JWT_EXPIRATION_HOURS: 24
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-notes-api-gin-32b!}
+      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+      JWT_REFRESH_EXPIRATION_HOURS: ${JWT_REFRESH_EXPIRATION_HOURS:-168}
     depends_on:
       postgres:
         condition: service_healthy
