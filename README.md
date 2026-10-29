@@ -1,6 +1,6 @@
 # Dual Notes API: Go Native (`net/http`) & Gin Framework
 
-A production-ready implementation of two identical Notes APIs in Go, demonstrating clean architecture, JWT authentication, PostgreSQL persistence, and Redis auth caching:
+A production-ready implementation of two identical Notes APIs in Go, demonstrating clean architecture, JWT authentication with Redis refresh token storage, and PostgreSQL database persistence:
 
 1. **`notes-api`** (`./notes-api`): Native Go implementation using only the standard library `net/http` (with Go 1.22+ routing features). Exposed on port **`9933`**.
 2. **`notes-api-gin`** (`./notes-api-gin`): Framework implementation using `github.com/gin-gonic/gin`. Exposed on port **`9944`**.
@@ -13,105 +13,99 @@ Both applications share the same PostgreSQL database instance (with isolated dat
 
 ```
 go-apm-agent/
+├── .env                         # Root environment configuration
+├── .env.example                 # Root environment template
 ├── docker-compose.yml           # Multi-container orchestration
 ├── init-scripts/
 │   └── 01-init-dbs.sql          # Auto-initializes notes_api & notes_api_gin DBs
 ├── notes-api/                   # Native Go net/http API (Port 9933)
+│   ├── .env.example             # Service-level environment template
 │   ├── README.md
 │   ├── Dockerfile
 │   ├── go.mod
 │   ├── main.go
 │   ├── config/                  # Environment & connection configuration
 │   ├── database/                # PostgreSQL pool & auto-migrations
-│   ├── cache/                   # Redis session & blacklist caching
+│   ├── cache/                   # Redis session, refresh token & blacklist caching
 │   ├── models/                  # Domain structs & DTOs
 │   ├── repository/              # PostgreSQL data access layer
-│   ├── service/                 # Business logic & JWT operations
+│   ├── service/                 # Business logic, JWT & refresh token operations
 │   ├── middleware/              # Auth, CORS, Logger middlewares
 │   └── handlers/                # HTTP request handlers
 ├── notes-api-gin/               # Gin Framework API (Port 9944)
+│   ├── .env.example             # Service-level environment template
 │   ├── README.md
 │   ├── Dockerfile
 │   ├── go.mod
 │   ├── main.go
-│   ├── config/
-│   ├── database/
-│   ├── cache/
-│   ├── models/
-│   ├── repository/
-│   ├── service/
-│   ├── middleware/
-│   └── handlers/
-├── verify-notes-api.sh          # Full test suite for notes-api (2xx & 4xx assertions)
-└── verify-notes-api-gin.sh      # Full test suite for notes-api-gin (2xx & 4xx assertions)
+│   ├── config/                  # Environment & connection configuration
+│   ├── database/                # PostgreSQL pool & auto-migrations
+│   ├── cache/                   # Redis session, refresh token & blacklist caching
+│   ├── models/                  # Domain structs & DTOs
+│   ├── repository/              # PostgreSQL data access layer
+│   ├── service/                 # Business logic, JWT & refresh token operations
+│   ├── middleware/              # Auth, CORS middlewares
+│   └── handlers/                # HTTP request handlers
+├── verify-notes-api.sh          # Automated test suite for notes-api (40 tests)
+└── verify-notes-api-gin.sh      # Automated test suite for notes-api-gin (40 tests)
 ```
 
 ---
 
-## Port Allocation & Environment
+## Storage & Authentication Architecture
 
-| Service | Internal Port | Host Port | Database / Cache Index |
-| :--- | :--- | :--- | :--- |
-| **`notes-api`** (native) | `8080` | **`9933`** | PostgreSQL DB: `notes_api` \| Redis DB: `0` |
-| **`notes-api-gin`** (gin) | `8081` | **`9944`** | PostgreSQL DB: `notes_api_gin` \| Redis DB: `1` |
-| **`postgres`** | `5432` | Internal only | Isolated databases auto-created on start |
-| **`redis`** | `6379` | Internal only | Shared Redis instance with isolated DB indices |
+### 1. PostgreSQL Persistence
+All persistent domain entities are stored in PostgreSQL:
+- **`users` table**: ID, username, email, bcrypt password hash, created_at, updated_at.
+- **`notes` table**: ID, user_id (foreign key to users), title, content, created_at, updated_at.
+- **`note_shares` table**: ID, note_id (foreign key to notes), shared_with_user_id (foreign key to users), permission (`read` or `write`), created_at.
+
+### 2. Redis Authentication & Token Storage
+Redis provides high-performance token and session management:
+- **Refresh Tokens (`auth:refresh:<token>`)**: Stores the user identity mapped to the refresh token with a 7-day TTL (configured via `JWT_REFRESH_EXPIRATION_HOURS`). Tokens are rotated upon every refresh.
+- **Session Cache (`auth:session:<jti>`)**: Caches decoded JWT user identity with the token's lifetime to avoid redundant database lookups on every request.
+- **Token Blacklist (`auth:blacklist:<jti>`)**: Instantly revokes JWT access tokens on logout until their original expiration.
 
 ---
 
-## Running the Applications
+## API Endpoints
 
-To build and start all 4 services:
+| Method | Path | Auth Required | Description |
+|---|---|---|---|
+| `GET` | `/health` | No | Service, PostgreSQL & Redis health check |
+| `POST` | `/api/v1/auth/register` | No | Register a new user (stores to PostgreSQL) |
+| `POST` | `/api/v1/auth/login` | No | Login; returns JWT access token & Redis refresh token |
+| `POST` | `/api/v1/auth/refresh` | No | Exchange refresh token for new access token & rotated refresh token |
+| `POST` | `/api/v1/auth/logout` | Yes | Invalidate token in Redis cache & blacklist |
+| `GET` | `/api/v1/auth/me` | Yes | Get current user profile |
+| `POST` | `/api/v1/notes` | Yes | Create a note (persisted to PostgreSQL) |
+| `GET` | `/api/v1/notes` | Yes | List owned and shared notes |
+| `GET` | `/api/v1/notes/:id` | Yes | Get note by ID (access controlled) |
+| `PUT` | `/api/v1/notes/:id` | Yes | Update note (owner or write permission) |
+| `DELETE` | `/api/v1/notes/:id` | Yes | Delete note (owner only) |
+| `POST` | `/api/v1/notes/:id/share` | Yes | Share note with another user (read/write) |
+| `GET` | `/api/v1/notes/:id/shares` | Yes | List all users a note is shared with |
+| `DELETE` | `/api/v1/notes/:id/share/:userId` | Yes | Revoke user access to a note |
+| `GET` | `/api/v1/notes/:id/access` | Yes | Check authorization details for note |
+
+---
+
+## Running with Docker Compose
 
 ```bash
-docker compose up -d
-```
+# Start all services
+docker compose up -d --build
 
-Check running containers:
-
-```bash
+# Check status
 docker compose ps
 ```
 
-View application logs:
+## Running Verification Suites
 
 ```bash
-docker compose logs -f notes-api notes-api-gin
+# Test native net/http API (Port 9933)
+./verify-notes-api.sh 9933
+
+# Test Gin API (Port 9944)
+./verify-notes-api-gin.sh 9944
 ```
-
----
-
-## Running the Verification Suites
-
-Each API comes with an automated verification test script that rigorously exercises all endpoints, validating both **2xx success** (200, 201) and **4xx client error** (400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found) scenarios:
-
-```bash
-# Verify Native Go API on port 9933
-./verify-notes-api.sh
-
-# Verify Gin API on port 9944
-./verify-notes-api-gin.sh
-```
-
----
-
-## API Summary Table
-
-All protected endpoints require the header: `Authorization: Bearer <token>`.
-
-| Method | Endpoint | Access | Description | Success / Error Codes |
-| :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Public | Service health & database/cache status | `200` |
-| `POST` | `/api/v1/auth/register` | Public | Register user (`username`, `email`, `password`) | `201`, `400` |
-| `POST` | `/api/v1/auth/login` | Public | Authenticate user, issue JWT & cache in Redis | `200`, `400`, `401` |
-| `POST` | `/api/v1/auth/logout` | Protected | Blacklist token in Redis auth cache | `200`, `401` |
-| `GET` | `/api/v1/auth/me` | Protected | Retrieve authenticated user profile | `200`, `401` |
-| `POST` | `/api/v1/notes` | Protected | Create new note (`title`, `content`) | `201`, `400`, `401` |
-| `GET` | `/api/v1/notes` | Protected | List accessible notes (`filter=all\|owned\|shared`) | `200`, `401` |
-| `GET` | `/api/v1/notes/:id` | Protected | Get note details (owner or shared recipient) | `200`, `401`, `403`, `404` |
-| `PUT` | `/api/v1/notes/:id` | Protected | Update note (owner or shared with `write` permission) | `200`, `400`, `401`, `403`, `404` |
-| `DELETE`| `/api/v1/notes/:id` | Protected | Delete note (owner only) | `200`, `401`, `403`, `404` |
-| `POST` | `/api/v1/notes/:id/share`| Protected (Owner) | Share note (`username` or `user_id`, `permission: "read"\|"write"`) | `200`, `400`, `401`, `403`, `404` |
-| `GET` | `/api/v1/notes/:id/shares`| Protected (Owner) | List all users with access to note | `200`, `401`, `403`, `404` |
-| `DELETE`| `/api/v1/notes/:id/share/:userId` | Protected (Owner) | Revoke a user's share access | `200`, `401`, `403`, `404` |
-| `GET` | `/api/v1/notes/:id/access`| Protected | Authorization check: verify if note is shared to a user or owned | `200`, `401`, `403`, `404` |

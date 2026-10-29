@@ -1,13 +1,13 @@
 # Notes API (Gin Framework)
 
-A high-performance RESTful Notes API written in Go using the Gin web framework (`github.com/gin-gonic/gin`).
+A high-performance RESTful Notes API written in Go using the `gin-gonic/gin` web framework.
 
 ## Architecture
 
-- **Driver**: Gin Web Framework (`gin.Engine`, router groups, middleware)
+- **Framework**: `github.com/gin-gonic/gin`
 - **Database**: PostgreSQL (`notes_api_gin` database)
 - **Auth Cache**: Redis (DB `1`)
-- **Authentication**: JWT (HMAC-SHA256) with Redis session storage and revocation blacklist
+- **Authentication**: JWT (HMAC-SHA256) with Redis refresh token storage, session caching, and revocation blacklist
 - **Port**: Container `8081`, mapped to host port **`9944`**
 
 ## Environment Variables
@@ -25,13 +25,15 @@ A high-performance RESTful Notes API written in Go using the Gin web framework (
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_DB` | `1` | Redis database index |
 | `JWT_SECRET` | `super-secret-jwt-key-...` | Secret key for JWT signing |
-| `JWT_EXPIRATION_HOURS` | `24` | Token lifespan |
+| `JWT_EXPIRATION_HOURS` | `24` | Access token lifespan |
+| `JWT_REFRESH_EXPIRATION_HOURS` | `168` | Refresh token lifespan (7 days) in Redis |
 
 ## Endpoints
 
 ### Auth
 - `POST /api/v1/auth/register` - Register user (`username`, `email`, `password`)
-- `POST /api/v1/auth/login` - Authenticate user, issue JWT, cache session in Redis
+- `POST /api/v1/auth/login` - Authenticate user, returns access token + refresh token
+- `POST /api/v1/auth/refresh` - Exchange refresh token for new access token and rotated refresh token
 - `POST /api/v1/auth/logout` - Blacklist token in Redis (Auth required)
 - `GET /api/v1/auth/me` - Get profile of current user (Auth required)
 
@@ -54,6 +56,5 @@ A high-performance RESTful Notes API written in Go using the Gin web framework (
 Run the verification test script from the project root:
 
 ```bash
-./verify-notes-api-gin.sh
+./verify-notes-api-gin.sh 9944
 ```
-
